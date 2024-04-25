@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.0-cudnn8-runtime-ubuntu18.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04
 
 
 #set up environment
@@ -12,6 +12,8 @@ WORKDIR /var/app
 
 # . Here means current directory.
 COPY . .
+
+RUN apt-get update && apt install -y libsndfile1
 
 RUN pip3 install --no-cache-dir -r requirements.txt
 
@@ -28,5 +30,5 @@ RUN apt-get update && apt-get install -y wget && \
     mv ffmpeg-*-amd64-static/ffprobe /usr/local/bin/
 
 # Start the app
-CMD ["gunicorn", "-b", "0.0.0.0:80","app:app","--workers","1","-k","uvicorn.workers.UvicornWorker"]
+CMD ["gunicorn", "-b", "0.0.0.0:80","app:app","--workers","1","-k","uvicorn.workers.UvicornWorker", "--timeout", "300"]
 

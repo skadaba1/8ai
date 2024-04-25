@@ -121,7 +121,7 @@ class VDL():
       return embeddings, timesteps
       
     # Function to download audio and extract clips of length n seconds
-  def load_video(self, video_url, output_directory='/content/'):
+  def load_video(self, video_url, output_directory='./'):
       try:
           # Initialize a YouTube object with the video URL
           yt = pytube.YouTube(video_url)
@@ -446,8 +446,9 @@ class VDB():
       top_rows = self._exec_search_(query_embed, table, n)
 
       start_times = top_rows['start'].values
+      source = top_rows['source'].values[0]
       
-      top_rows_transcript = self._get_segments_(start_times, self.get_table(id, 'transcript'))
+      top_rows_transcript = self._get_segments_(start_times, self.get_table(source, 'transcript'))
 
       out_frames = top_rows.drop(columns=['embed'], axis=1)
       out_transcript = top_rows_transcript.drop(columns=['embed'], axis=1)
