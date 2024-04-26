@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # from .modules import * ##################################################
@@ -108,6 +109,13 @@ def time_util(total_seconds):
   formatted_time = f"{hours:02}:{minutes:02}:{seconds:.2f}"
 
   return formatted_time
+
+def search_for_url(url, obj):
+    for id, details in obj.items():
+        # Check if the url matches the given video_url
+        if details['url'] == url:
+            return id
+    return None
 
 def combine_tables(dataframes):
 
@@ -242,6 +250,7 @@ class VDL():
     # Function to download audio and extract clips of length n seconds
   def load_video(self, video_url, output_directory='./'):
       try:
+
           # Initialize a YouTube object with the video URL
           yt = pytube.YouTube(video_url)
 
@@ -254,7 +263,7 @@ class VDL():
           video_path = video_stream.download(output_path=output_directory+'video/')
           id = uuid.uuid4()
 
-          self.lookup_table[id] = {'audio':audio_path, 'video':video_path}
+          self.lookup_table[id] = {'audio':audio_path, 'video':video_path, 'url':video_url, 'duration':yt.length}
 
           return audio_path, video_path, id, yt.length
 
@@ -281,6 +290,9 @@ class VDL():
   
   def get_embeddings(self, id):
     return self.lookup_table[id]['embeddings']
+  
+  def delete(self):
+    self.lookup_table = dict()
   
 
 # Audio to Text
@@ -421,6 +433,7 @@ class VDB():
 
     self.lookup_transcript = dict()
     self.lookup_frames = dict()
+    self.lookup_segments = dict()
 
     self.text_embedding_model = text_embedding_model
     self.image_embedding_model = image_embedding_model
@@ -434,7 +447,9 @@ class VDB():
     self.client = OpenAI()
 
   def add_table(self, segments, embeds, id, table_cls):
+
     if(table_cls == 'transcript'):
+      self.lookup_segments[id] = segments
       transcript = "\n".join([seg['text'] for seg in segments])
       for entry, embed in zip(segments, embeds):
         entry['embed'] = embed.detach().numpy().flatten()
@@ -447,6 +462,7 @@ class VDB():
       # Create a pandas DataFrame with two columns
       data = {
           "start": segments.flatten(),  # Convert (50, 1) to (50,) for a flat column
+          "end":segments.flatten(),
           "embed": embeds
       }
 
@@ -457,9 +473,13 @@ class VDB():
     else:
       raise Exception("Invalid table type!")
   
-  def remove_table(self, id):
-    del self.lookup_transcript[id]
-    del self.lookup_frames[id]
+  def remove_table(self, id=None):
+    if(id):
+      del self.lookup_transcript[id]
+      del self.lookup_frames[id]
+    else:
+      self.lookup_transcript = dict()
+      self.lookup_frames = dict()
 
   def get_table(self, id, table_cls):
 
@@ -552,7 +572,8 @@ class VDB():
       top_rows = self._exec_search_(normalized_query_embed, table, n=n)  
 
       out = top_rows.drop(columns=['embed'], axis=1)
-      return out, query
+      source = out['source'].values[0]
+      return out, source, query
 
     elif(table_cls == 'frames'):
 
@@ -570,7 +591,8 @@ class VDB():
 
       out_frames = top_rows.drop(columns=['embed'], axis=1)
       #out_transcript = top_rows_transcript.drop(columns=['embed'], axis=1)
-      return out_frames, None
+      source = out_frames['source'].values[0]
+      return out_frames, source, None
 
     else:
 
@@ -605,39 +627,48 @@ vector_db = VDB(sm_embedding_model, mm_embedding_model)
 def get_text_and_embeds(yt_path):
   
   # load the video
-  start = time.time()
-  audio_path, video_path, id, duration = video_data_loader.load_video(yt_path)
-  print(f"Loaded video in: {time.time() - start} seconds")
-  print("\n")
+  id = search_for_url(yt_path, video_data_loader.lookup_table)
+  if(id is None):
+    start = time.time()
+    audio_path, video_path, id, duration = video_data_loader.load_video(yt_path)
+    print(f"Loaded video in: {time.time() - start} seconds")
+    print("\n")
 
-  # handle video embeds
-  start = time.time()
-  clip_embeddings, timesteps = video_data_loader.load_clip_embeddings(id, mm_embedding_model)
-  print(f"Loaded clip embeddings in: {time.time() - start} seconds")
-  print("\n")
+    # handle video embeds
+    start = time.time()
+    clip_embeddings, timesteps = video_data_loader.load_clip_embeddings(id, mm_embedding_model)
+    print(f"Loaded clip embeddings in: {time.time() - start} seconds")
+    print("\n")
 
-  # grab the transcript
-  start = time.time()
-  transcript, transcript_embeds, scores = transcription_model.transcribe_and_align(audio_path, sm_embedding_model)
-  print(f"Loaded transcript in: {time.time() - start} seconds")
-  print("\n")
+    # grab the transcript
+    start = time.time()
+    transcript, transcript_embeds, scores = transcription_model.transcribe_and_align(audio_path, sm_embedding_model)
+    print(f"Loaded transcript in: {time.time() - start} seconds")
+    print("\n")
 
-  # add transcript to the vector db
-  vector_db.add_table(transcript['segments'], transcript_embeds, id, 'transcript')
+    # add transcript to the vector db
+    vector_db.add_table(transcript['segments'], transcript_embeds, id, 'transcript')
 
-  # add footage to the vector db
-  vector_db.add_table(timesteps, clip_embeddings, id, 'frames')
+    # add footage to the vector db
+    vector_db.add_table(timesteps, clip_embeddings, id, 'frames')
 
-  vector_db.update_most_recent(id)
+    vector_db.update_most_recent(id)
 
-  return transcript['segments'], time_util(duration)
+    return transcript['segments'], time_util(duration)
+
+  else:
+
+ 
+    return vector_db.lookup_segments[id], video_data_loader.lookup_table[id]['duration']
+
 
 
 @timeit
 # number of docs in final retrieval step
 def search_video(query, table_cls='transcript', n=5, id=None):
-  out, _ = vector_db.search_table(query, table_cls, n, id)
-
+  out, source, _ = vector_db.search_table(query, table_cls, n, id)
+  source = video_data_loader.lookup_table[source]['url']
+  print(f"Source: {source}")
   gpt_answer = None
 
   if(_ is not None):
@@ -646,9 +677,22 @@ def search_video(query, table_cls='transcript', n=5, id=None):
   # second argument is time threshold for clustering segments
   clustered = cluster_rows(out, table_cls, 5)
   start, end = clustered.iloc[0]['start'], clustered.iloc[0]['end']
-  return start, end, gpt_answer
+  return start, end, source, gpt_answer
 
 app = FastAPI()
+
+# Configure CORS
+origins = [
+    "http://localhost:3000",  # The origin for your frontend
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # List of allowed origins
+    allow_credentials=True,
+    allow_methods=["*"],    # Allows all methods
+    allow_headers=["*"],    # Allows all headers
+)
 
 class VideoInput(BaseModel):
     link: str
@@ -661,11 +705,15 @@ class SearchQuery(BaseModel):
 class SearchOutput(BaseModel):
     start_time: float
     end_time: float
+    source: str
     meta: str
 
 class VideoOutput(BaseModel):
     transcript: str
     duration: str
+
+class DeletionSuccess(BaseModel):
+    err: str
 
 @app.get("/")
 def home():
@@ -679,11 +727,20 @@ async def add(yt_link: VideoInput):
 
 @app.post("/search", response_model=SearchOutput)
 async def search(query: SearchQuery):
-  start_time, end_time, _ = search_video(query.query, query.table_cls, query.n)
+  start_time, end_time, source, _ = search_video(query.query, query.table_cls, query.n)
 
   if(_ is not None):
     gpt_answer = _
   else:
     gpt_answer = ""
 
-  return {"start_time": start_time, "end_time":end_time, "meta":gpt_answer}
+  return {"start_time": start_time, "end_time":end_time, "source": source, "meta":gpt_answer}
+
+@app.post("/delete", response_model=DeletionSuccess)
+async def clear():
+  try:
+    vector_db.remove_table()
+    video_data_loader.delete()
+    return {"err":"Successfully cleared DB!"}
+  except Exception as e:
+    return {"err": str(e)}
