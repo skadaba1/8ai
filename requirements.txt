@@ -9,3 +9,5 @@ uvicorn>=0.15.0,<0.16.0
 gunicorn==20.0.4
 ffmpeg-python==0.2.0
 openai==1.23.3
+decord==0.6.0
+numba==0.58.1

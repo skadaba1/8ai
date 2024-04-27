@@ -30,5 +30,5 @@ RUN apt-get update && apt-get install -y wget && \
     mv ffmpeg-*-amd64-static/ffprobe /usr/local/bin/
 
 # Start the app
-CMD ["gunicorn", "-b", "0.0.0.0:80","app:app","--workers","1","-k","uvicorn.workers.UvicornWorker", "--timeout", "300"]
+CMD ["gunicorn", "-b", "0.0.0.0:80","app:app","--workers","1","-k","uvicorn.workers.UvicornWorker", "--timeout", "600"]
 

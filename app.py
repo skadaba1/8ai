@@ -22,6 +22,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
 import numpy as np
 import uuid
+from numba import cuda
 
 import ffmpeg
 from PIL import Image
@@ -32,6 +33,11 @@ from PIL import Image
 
 # from .utils import *  #######################################################
 import pandas as pd
+import decord as de
+
+ctx = de.cpu()
+os.environ["OPENAI_API_KEY"] = ""
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def cluster_rows(df, table_cls, threshold):
 
@@ -153,8 +159,6 @@ def extract_words_around_time(dataframe, start_time, n):
 
     ########################################################################################
 
-os.environ["OPENAI_API_KEY"] = ""
-
 
 def timeit(func):
     @wraps(func)
@@ -192,40 +196,27 @@ class VDL():
       return target_width, h_size
 
   @timeit
-  def _get_frames_(self, video_path):
+  def _get_frames_(self, video_path, num_frames=500):
+      vr = de.VideoReader(video_path)
+      fps = vr.get_avg_fps()
+      duration = vr.get_frame_timestamp([-1]).flatten()[0]
 
-      probe = ffmpeg.probe(video_path, threads=1)
-      video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
-      width, height = self._get_scaled_size_(int(video_info['width']), int(video_info['height']))
-
-      duration = float(probe['format']['duration'])
-      fps = eval(video_info['r_frame_rate'])  # Convert to float
-
-      out, err = (
-            ffmpeg
-            .input(video_path, threads=1)
-            .filter('scale', width, height)
-            .output('pipe:', format='rawvideo', pix_fmt='rgb24')
-            .run(capture_stdout=True, quiet=True)
-        )
-      frames = (
-          np
-          .frombuffer(out, np.uint8)
-          .reshape([-1, height, width, 3])
-      )
-
-      # Number of frames in the video
-      total_frames = frames.shape[0]
-      
-      # Define the number of evenly spaced indexes
-      n = 100  # You can change this to the desired number of indexes
-
-      # Create evenly spaced indexes
-      indexes = np.linspace(0, total_frames - 1, num=n, dtype=int)
-      timestamps = indexes / fps
-
-      #indexes = np.random.randint(frames.shape[0], size=10)
-      return [ frame for frame in frames[indexes, :] ], timestamps
+      selected_frames = np.linspace(0, int(duration*fps), num=num_frames, endpoint=False, dtype=int).tolist()
+      timestamps_temp = vr.get_frame_timestamp(selected_frames).flatten().tolist()[::2]
+    
+      #[0, 197, 394, 591, 789, 986, 1183, 1381, 1578, 1775]
+      frames = []
+      timestamps = []
+      for i, t in enumerate(selected_frames):
+          try:
+              frame = vr.get_batch([selected_frames[i]])
+              frames.append(frame)
+              timestamps.append(timestamps_temp[i])
+          except:
+              pass
+      frames = [i.asnumpy()[0,:,:] for i in frames]
+      print(len(frames), len(timestamps))
+      return frames, np.array(timestamps)
     
       
 
@@ -238,7 +229,7 @@ class VDL():
       embeddings = clip_model.embed_image(images)
       
       # Convert the embeddings to a list of NumPy arrays
-      embeddings_list = embeddings.detach().numpy().tolist()
+      embeddings_list = embeddings.detach().cpu().numpy().tolist()
 
       return embeddings_list
   
@@ -298,7 +289,7 @@ class VDL():
 # Audio to Text
 
 class A2T():
-  def __init__(self, model_name, HF_TOKEN=None, low_mem=True, batch_size=16):
+  def __init__(self, model_name, HF_TOKEN=None, low_mem=True, batch_size=4):
 
     if(not HF_TOKEN):
       raise Exception("You must provide a valid Hugging Face authentication token!")
@@ -312,7 +303,7 @@ class A2T():
 
     # config
     self.batch_size = batch_size
-    self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    self.device = device
     print(f'Device: {self.device}')
 
 
@@ -373,7 +364,7 @@ class T2E():
     self._setup_(model_name)
 
   def _setup_(self, model_name):
-    self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+    self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True).to(device)
     self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
   def _preprocess_(self, last_hidden_state):
@@ -388,7 +379,8 @@ class T2E():
   @timeit
   def embed(self, input_texts):
     batch_dict = self.tokenizer(input_texts, max_length=8192, padding=True, return_tensors='pt')
-    outputs = self.model(**batch_dict)
+    inputs = {key: value.to(device) for key, value in batch_dict.items()}
+    outputs = self.model(**inputs)
     embeddings = self._preprocess_(outputs.last_hidden_state[:,0])
     scores = self._compute_scores(embeddings)
     return embeddings, scores
@@ -407,21 +399,22 @@ class VT2E():
 
   def _setup_(self, model_name):
 
-    self.image_model = CLIPVisionModelWithProjection.from_pretrained("openai/clip-vit-base-patch32")
+    self.image_model = CLIPVisionModelWithProjection.from_pretrained("openai/clip-vit-base-patch32").to(device)
     self.image_processor = CLIPImageProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-    self.text_model = CLIPTextModelWithProjection.from_pretrained("openai/clip-vit-base-patch32")
+    self.text_model = CLIPTextModelWithProjection.from_pretrained("openai/clip-vit-base-patch32").to(device)
     self.text_tokenizer = AutoTokenizer.from_pretrained("openai/clip-vit-base-patch32")
   
   def embed_text(self, input_texts):
     inputs = self.text_tokenizer(input_texts, padding=True, return_tensors="pt")
-
+    inputs = {key: value.to(device) for key, value in inputs.items()}
     outputs = self.text_model(**inputs)
     text_embeds = outputs.text_embeds
     return text_embeds
   
   def embed_image(self, images):
     inputs = self.image_processor(images, return_tensors="pt")
+    inputs = {key: value.to(device) for key, value in inputs.items()}
     outputs = self.image_model(**inputs)
     image_embeds = outputs.image_embeds
     return image_embeds
@@ -452,7 +445,7 @@ class VDB():
       self.lookup_segments[id] = segments
       transcript = "\n".join([seg['text'] for seg in segments])
       for entry, embed in zip(segments, embeds):
-        entry['embed'] = embed.detach().numpy().flatten()
+        entry['embed'] = embed.detach().cpu().numpy().flatten()
       df = pd.DataFrame(segments)
       df['source'] = id
       self.lookup_transcript[id] = df
@@ -477,9 +470,11 @@ class VDB():
     if(id):
       del self.lookup_transcript[id]
       del self.lookup_frames[id]
+      del self.lookup_segments[id]
     else:
       self.lookup_transcript = dict()
       self.lookup_frames = dict()
+      self.lookup_segments = dict()
 
   def get_table(self, id, table_cls):
 
@@ -555,7 +550,7 @@ class VDB():
 
       table = self.get_table(id, table_cls)
       query = query if type(query) == list else [query]
-      normalized_query_embed = self.text_embedding_model.embed(query)[0].detach().numpy().flatten()
+      normalized_query_embed = self.text_embedding_model.embed(query)[0].detach().cpu().numpy().flatten()
 
       top_rows = self._exec_search_(normalized_query_embed, table, n=20) # harcoded 
 
@@ -567,19 +562,20 @@ class VDB():
 
       query = self._openai_pipe_(query, docs)
       print(f"GPT-reworded query: {query}")
-      normalized_query_embed = self.text_embedding_model.embed(query)[0].detach().numpy().flatten()
+      normalized_query_embed = self.text_embedding_model.embed(query)[0].detach().cpu().numpy().flatten()
 
       top_rows = self._exec_search_(normalized_query_embed, table, n=n)  
 
       out = top_rows.drop(columns=['embed'], axis=1)
       source = out['source'].values[0]
+
       return out, source, query
 
     elif(table_cls == 'frames'):
 
       table = self.get_table(id, table_cls)
       query = query if type(query) == list else [query]
-      query_embed = self.image_embedding_model.embed_text(query)[0].detach().numpy().flatten()
+      query_embed = self.image_embedding_model.embed_text(query)[0].detach().cpu().numpy().flatten()
 
       # Get the top n rows from the DataFrame
       top_rows = self._exec_search_(query_embed, table, n)
@@ -592,6 +588,7 @@ class VDB():
       out_frames = top_rows.drop(columns=['embed'], axis=1)
       #out_transcript = top_rows_transcript.drop(columns=['embed'], axis=1)
       source = out_frames['source'].values[0]
+
       return out_frames, source, None
 
     else:
@@ -600,6 +597,31 @@ class VDB():
 
   def update_most_recent(self, id):
     self.most_recent = id
+
+class Navigator():
+
+  def __init__(self):
+
+    self.start_times = None
+    self.end_times = None
+    self.index = None
+    self.length = None
+  
+  def setup_nav(self, start_times, end_times):
+    self.start_times = start_times
+    self.end_times = end_times
+    self.index = 0
+    self.length = len(start_times)
+  
+  def next(self):
+    self.index = (self.index + 1) % self.length
+    return self.start_times[self.index], self.end_times[self.index]
+  
+  def prev(self):
+    self.index = (self.index - 1) % self.length
+    return self.start_times[self.index], self.end_times[self.index]
+
+
 ##################################################################################
 
 BASE_DIR = "./media/"
@@ -615,12 +637,17 @@ low_mem = True
 transcription_model = A2T(whisper_model_path, HF_TOKEN, low_mem)
 
 # Embedding model
-sm_model_path = 'Alibaba-NLP/gte-base-en-v1.5' # large 
+sm_model_path = 'BAAI/bge-small-en-v1.5' #'Alibaba-NLP/gte-base-en-v1.5', large 
 sm_embedding_model = T2E(sm_model_path)
 mm_embedding_model = VT2E(mm_model_path)
 
 # vector database
 vector_db = VDB(sm_embedding_model, mm_embedding_model)
+
+# navigator
+nav = Navigator()
+
+##################################################################################
 
 # main function
 @timeit
@@ -654,11 +681,21 @@ def get_text_and_embeds(yt_path):
 
     vector_db.update_most_recent(id)
 
+    if os.path.exists("demofile.txt"):
+      os.remove(video_data_loader.lookup_table[id]['audio'])
+      os.remove(video_data_loader.lookup_table[id]['video'])
+    else:
+      print("The file does not exist")
+
+    # device = cuda.get_current_device()
+    # device.reset()
+
     return transcript['segments'], time_util(duration)
 
   else:
 
- 
+    vector_db.update_most_recent(id)
+
     return vector_db.lookup_segments[id], video_data_loader.lookup_table[id]['duration']
 
 
@@ -676,7 +713,12 @@ def search_video(query, table_cls='transcript', n=5, id=None):
 
   # second argument is time threshold for clustering segments
   clustered = cluster_rows(out, table_cls, 5)
+  nav.setup_nav(clustered['start'].values.tolist(), clustered['end'].values.tolist())
   start, end = clustered.iloc[0]['start'], clustered.iloc[0]['end']
+
+  # device = cuda.get_current_device()
+  # device.reset()
+
   return start, end, source, gpt_answer
 
 app = FastAPI()
@@ -707,6 +749,10 @@ class SearchOutput(BaseModel):
     end_time: float
     source: str
     meta: str
+  
+class NavOutput(BaseModel):
+  start_time: float
+  end_time: float
 
 class VideoOutput(BaseModel):
     transcript: str
@@ -744,3 +790,13 @@ async def clear():
     return {"err":"Successfully cleared DB!"}
   except Exception as e:
     return {"err": str(e)}
+
+@app.post("/next", response_model=NavOutput)
+def next():
+  start, end = nav.next()
+  return {"start_time":start, "end_time":end}
+
+@app.post("/prev", response_model=NavOutput)
+def prev():
+  start, end = nav.prev()
+  return {"start_time":start, "end_time":end}

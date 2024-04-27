@@ -55,8 +55,7 @@ const ButtonContainer = styled.div`
   button {
     padding: 8px 16px;
     background-color: #007BFF;
-    margin: 20px;
-    margin-left: 90%;
+    margin: 10px;
     color: white;
     border: none;
     border-radius: 4px;
@@ -163,9 +162,9 @@ function App() {
           moveToNextSegment();
         }
       }
-    }, 100); // Check every second
+    }, 100); // Check 0.1 every second
     return () => clearInterval(interval);
-  }, [player, endTime, activeIndex]);
+  }, [player, activeIndex]);
 
 
   const moveToNextSegment = () => {
@@ -185,7 +184,9 @@ function App() {
     const newEndSeconds = parseFloat(end);
     setEndTime(newEndSeconds);
     setActiveIndex(index);
-    player.seekTo(newStartSeconds);
+    if(Math.abs(player.getCurrentTime() - newStartSeconds) > 2) {
+      player.seekTo(newStartSeconds);
+    }
     //player.playVideo();
   };
 
@@ -198,24 +199,29 @@ function App() {
     }
   };
 
-  function getActiveIndex(timeInSeconds, transcript) {
+  async function updateActiveIndex(timeInSeconds, transcript) {
     // Convert each time string to seconds and compare
     const index = transcript.findIndex(segment => {
-        const startSeconds = parseFloat(segment.start)
-        const endSeconds = parseFloat(segment.end)
+        const startSeconds = parseFloat(timeInSeconds)
+        const endSeconds = parseFloat(timeInSeconds)
         return timeInSeconds >= startSeconds && timeInSeconds <= endSeconds;
     });
-    return index; // This will return -1 if no segment is active at the given time
+    setActiveIndex(index+1);
+    //return index; This will return -1 if no segment is active at the given time
   };
 
 
-  async function fetchVideoAPI(myString) {
-    const url = 'http://ec2-3-138-170-173.us-east-2.compute.amazonaws.com/add';
+  async function fetchVideoAPI(myString, videoId) {
+    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/add';
     const data = { link: myString };
 
     try {
       const response = await axios.post(url, data);
       console.log('Success:', response.data);
+      const obj = JSON.parse(response.data['transcript']);
+      setTranscript(obj);
+      setVideoId(videoId);
+      setLoading(false)
       return response.data; // You can return the data to use elsewhere
     } catch (error) {
       console.error('Error:', error);
@@ -223,12 +229,23 @@ function App() {
   }
 
   async function searchAPI() {
-    const url = 'http://ec2-3-138-170-173.us-east-2.compute.amazonaws.com/search';
+    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/search';
     const data = { query: query, table_cls: selectedOption, n: 5 };
 
     try {
       const response = await axios.post(url, data);
       console.log('Success:', response.data);
+
+      const newStartSeconds = parseFloat(response.data['start_time']);
+      const newEndSeconds = parseFloat(response.data['end_time']);
+      await updateActiveIndex(newStartSeconds, transcript);
+      setStartTime(newStartSeconds);
+      setEndTime(newEndSeconds);
+      setMeta(response['meta']);
+      
+      if(response['source'] !== videoUrl) {
+        setVideoUrl(response['source'])
+      }
       return response.data; // You can return the data to use elsewhere
     } catch (error) {
       console.error('Error:', error);
@@ -236,7 +253,7 @@ function App() {
   }
 
   async function deleteAPI() {
-    const url = 'http://ec2-3-138-170-173.us-east-2.compute.amazonaws.com/delete';
+    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/delete';
     const data = {};
 
     try {
@@ -248,22 +265,55 @@ function App() {
     }
   }
 
-  function getYouTubeVideoID(url) {
-    const pattern = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?watch\?(?:\S*?&?v\=))|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+  async function nextAPI() {
+    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/next';
+    const data = {};
 
-    const match = url.match(pattern);
-    return match ? match[1] : null;
+    try {
+      const response = await axios.post(url, data);
+      console.log('Success:', response.data);
+      await updateActiveIndex(response['start_time'], transcript);
+      setStartTime(response['start_time']);
+      setEndTime(response['end_time']);
+      return response.data; // You can return the data to use elsewhere
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  }
+
+  async function prevAPI() {
+    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/prev';
+    const data = {};
+
+    try {
+      const response = await axios.post(url, data);
+      console.log('Success:', response.data);
+      await updateActiveIndex(response['start_time'], transcript);
+      setStartTime(response['start_time']);
+      setEndTime(response['end_time']);
+      return response.data; // You can return the data to use elsewhere
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  }
+
+  function getYouTubeVideoID(url) {
+    if(url){ 
+      const pattern = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?watch\?(?:\S*?&?v\=))|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+
+      const match = url.match(pattern);
+      return match ? match[1] : null;
+    }
   };
 
   const handleFetchYT = async () => {
     console.log("Fetching Video...")
 
-    const newvideoId = getYouTubeVideoID(videoUrl);
-    const response = await fetchVideoAPI(videoUrl)
-    const obj = JSON.parse(response['transcript']);
-    setTranscript(obj);
-    setVideoId(newvideoId);
-    setLoading(false)
+    const newVideoId = getYouTubeVideoID(videoUrl);
+    const response = await fetchVideoAPI(videoUrl, newVideoId)
+    setStartTime(0)
+    setEndTime(parseFloat(JSON.parse(response['transcript'])[0]['end']))
+    //const obj = JSON.parse(response['transcript']);
   };
 
   const updateFetchYT = async (url=null) => {
@@ -272,14 +322,11 @@ function App() {
     var newVideoId = null;
     if (url) {
       newVideoId = getYouTubeVideoID(url);
-      response = await fetchVideoAPI(url)
+      response = await fetchVideoAPI(url, newVideoId)
     } else {
       throw 'Invalid source url retrieved!';
     }
-    const obj = JSON.parse(response['transcript']);
-    setTranscript(obj);
-    setVideoId(newVideoId);
-    setLoading(false)
+    //const obj = JSON.parse(response['transcript']);
   };
 
   
@@ -287,18 +334,7 @@ function App() {
     console.log("Searching...");
     const response = await searchAPI(); 
     await updateFetchYT(response['source']);
-    const newStartSeconds = parseFloat(response['start_time']);
-    const newEndSeconds = parseFloat(response['end_time']);
-    console.log("Seeking to, start: ", newStartSeconds, " end: ", newEndSeconds);
-    player.seekTo(newStartSeconds);
-  
-    setStartTime(newStartSeconds);
-    setEndTime(newEndSeconds);
-    setMeta(response['meta']);
-    
-    if(response['source'] !== videoUrl) {
-      setVideoUrl(response['source'])
-    }
+    player.seekTo(startTime);
   }
 
   // Handle change event of the select dropdown
@@ -309,6 +345,17 @@ function App() {
   const handleDelete = async () => {
     const response = await deleteAPI();
     console.log(response);
+  }
+
+  const handleNext = async () => {
+    const response = await nextAPI();
+    player.seekTo(response['start_time'])
+  }
+
+  const handlePrev = async () => {
+    console.log("Previous")
+    const response = await prevAPI();
+    player.seekTo(response['start_time'])
   }
 
   const opts = {
@@ -375,10 +422,19 @@ function App() {
           </TranscriptContainer>
         </div>
         <BeautifulText isActive={true}> {meta} </BeautifulText>
-        
+        <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+          <div style={{ display: "flex", gap: "2px" }}> 
+            <ButtonContainer>
+              <button onClick={handlePrev}>Prev</button>
+            </ButtonContainer>
+            <ButtonContainer>
+              <button onClick={handleNext}>Next</button>
+            </ButtonContainer>
+          </div>
         <ButtonContainer>
           <button onClick={handleDelete}>Delete</button>
         </ButtonContainer>
+      </div>
         </div>
       )}
     </AppContainer>
