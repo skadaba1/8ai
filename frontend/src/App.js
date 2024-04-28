@@ -212,7 +212,7 @@ function App() {
 
 
   async function fetchVideoAPI(myString, videoId) {
-    const url = 'https://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/add';
+    const url = 'https://cors-anywhere.herokuapp.com/http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/add';
     const data = { link: myString };
 
     try {
@@ -229,7 +229,7 @@ function App() {
   }
 
   async function searchAPI() {
-    const url = 'https://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/search';
+    const url = 'https://cors-anywhere.herokuapp.com/http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/search';
     const data = { query: query, table_cls: selectedOption, n: 5 };
 
     try {
@@ -253,7 +253,7 @@ function App() {
   }
 
   async function deleteAPI() {
-    const url = 'https://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/delete';
+    const url = 'https://cors-anywhere.herokuapp.com/http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/delete';
     const data = {};
 
     try {
@@ -266,7 +266,7 @@ function App() {
   }
 
   async function nextAPI() {
-    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/next';
+    const url = 'https://cors-anywhere.herokuapp.com/http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/next';
     const data = {};
 
     try {
@@ -282,7 +282,7 @@ function App() {
   }
 
   async function prevAPI() {
-    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/prev';
+    const url = 'https://cors-anywhere.herokuapp.com/http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/prev';
     const data = {};
 
     try {

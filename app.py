@@ -726,6 +726,7 @@ app = FastAPI()
 # Configure CORS
 origins = [
     "http://localhost:3000",  # The origin for your frontend
+    "https://skadaba1.github.io",
 ]
 
 app.add_middleware(
@@ -735,6 +736,7 @@ app.add_middleware(
     allow_methods=["*"],    # Allows all methods
     allow_headers=["*"],    # Allows all headers
 )
+
 
 class VideoInput(BaseModel):
     link: str
