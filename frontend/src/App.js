@@ -2,13 +2,17 @@ import React, { useState, useEffect } from 'react';
 import YouTube from 'react-youtube';
 import styled from 'styled-components';
 import axios from 'axios';
+import './AppDocumentation';
+import AppDocumentation from './AppDocumentation';
 
 const InputContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px;
-  margin: 10px 0;
+  margin-bottom: 5px 0;
+  margin-left: 10px;
+  margin-right: 10px;
   border: 1px solid #ccc;
   border-radius: 8px;
   background-color: #f9f9f9;
@@ -76,7 +80,8 @@ const CollapsibleContainer = styled.div`
   border-radius: 8px;
   background-color: #f9f9f9;
   padding: 10px;
-  margin: 10px 0;
+  margin: 10px ;
+  align-items: center;
 `;
 
 const CollapsibleHeader = styled.div`
@@ -369,6 +374,8 @@ function App() {
 
 
   return (
+    <div>
+    <AppDocumentation></AppDocumentation>
     <AppContainer>
       {loading ? (
         <div></div>
@@ -385,7 +392,7 @@ function App() {
       {loading ? (
         <CollapsibleContainer>
           <CollapsibleHeader onClick={toggleCollapse}>
-            <span>Input Section</span>
+            <span>Enter YouTube url here...</span>
             <button>{isCollapsed ? 'Expand' : 'Collapse'}</button>
           </CollapsibleHeader>
           <CollapsibleContent isCollapsed={isCollapsed}>
@@ -399,7 +406,7 @@ function App() {
         <div>
           <CollapsibleContainer>
             <CollapsibleHeader onClick={toggleCollapse}>
-              <span>Input Section</span>
+              <span>Enter YouTube url here..</span>
               <button>{isCollapsed ? 'Expand' : 'Collapse'}</button>
             </CollapsibleHeader>
             <CollapsibleContent isCollapsed={isCollapsed}>
@@ -438,6 +445,7 @@ function App() {
         </div>
       )}
     </AppContainer>
+    </div>
   );
   
   
