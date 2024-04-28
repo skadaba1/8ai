@@ -212,7 +212,7 @@ function App() {
 
 
   async function fetchVideoAPI(myString, videoId) {
-    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/add';
+    const url = 'https://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/add';
     const data = { link: myString };
 
     try {
@@ -229,7 +229,7 @@ function App() {
   }
 
   async function searchAPI() {
-    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/search';
+    const url = 'https://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/search';
     const data = { query: query, table_cls: selectedOption, n: 5 };
 
     try {
@@ -253,7 +253,7 @@ function App() {
   }
 
   async function deleteAPI() {
-    const url = 'http://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/delete';
+    const url = 'https://ec2-3-128-201-39.us-east-2.compute.amazonaws.com/delete';
     const data = {};
 
     try {
