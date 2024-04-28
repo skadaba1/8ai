@@ -207,10 +207,11 @@ function App() {
   async function updateActiveIndex(timeInSeconds, transcript) {
     // Convert each time string to seconds and compare
     const index = transcript.findIndex(segment => {
-        const startSeconds = parseFloat(timeInSeconds)
-        const endSeconds = parseFloat(timeInSeconds)
+        const startSeconds = parseFloat(segment['start'])
+        const endSeconds = parseFloat(segment['end'])
         return timeInSeconds >= startSeconds && timeInSeconds <= endSeconds;
     });
+    setEndTime(parseFloat(transcript[index+1]['end']));
     setActiveIndex(index+1);
     //return index; This will return -1 if no segment is active at the given time
   };
@@ -248,9 +249,6 @@ function App() {
       setEndTime(newEndSeconds);
       setMeta(response['meta']);
       
-      if(response['source'] !== videoUrl) {
-        setVideoUrl(response['source'])
-      }
       return response.data; // You can return the data to use elsewhere
     } catch (error) {
       console.error('Error:', error);
@@ -322,7 +320,7 @@ function App() {
   };
 
   const updateFetchYT = async (url=null) => {
-    console.log("Fetching Video...", url)
+    setVideoUrl(url)
     var response = {};
     var newVideoId = null;
     if (url) {
@@ -337,9 +335,13 @@ function App() {
   
   const handleSearch = async () => {
     console.log("Searching...");
+  
     const response = await searchAPI(); 
-    await updateFetchYT(response['source']);
-    player.seekTo(startTime);
+    if(response['source'] !== videoUrl) {
+      setVideoUrl(response['source'])
+      await updateFetchYT(response['source']);
+    }
+    player.seekTo(parseFloat(response['start_time']));
   }
 
   // Handle change event of the select dropdown
@@ -358,7 +360,6 @@ function App() {
   }
 
   const handlePrev = async () => {
-    console.log("Previous")
     const response = await prevAPI();
     player.seekTo(response['start_time'])
   }
