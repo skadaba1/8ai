@@ -10,20 +10,30 @@ from model.modules import device as compute_device
 import json
 
 
-
-ctx = de.cpu()
-os.environ["OPENAI_API_KEY"] = ""
-device = compute_device
-
+# constants
 LMAX_FOR_GPU = 60
 __version__ = "0.1.0"
+
+# devices
+ctx = de.cpu()
+device = compute_device
+
+# tokens
+os.environ["OPENAI_API_KEY"] = ""
+HF_TOKEN = ""
+
+
+######################################################################################
+
+################               The app core functionality             ################
+
+######################################################################################
 
 video_data_loader = VDL()
 
 # transcription model
 whisper_model_path = "tiny.en" #"large-v2", search over transcript only
 mm_model_path = "openai/clip-vit-base-patch32"
-HF_TOKEN = ""
 low_mem = True
 transcription_model = A2T(whisper_model_path, HF_TOKEN, low_mem)
 
