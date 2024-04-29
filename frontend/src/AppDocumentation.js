@@ -31,7 +31,7 @@ const AppDocumentation = () => {
             Uploading and Managing Videos
           </button>
           <div className={`accordion-content ${activeIndex === 0 ? 'show' : ''}`}>
-            <p>Expand the video input field to upload a new YouTube video by entering its URL. Once uploaded, the video can be managed within the app's interface.</p>
+            <p>Expand the video input field to upload a new YouTube video by entering its URL. Once uploaded, the video can be managed within the app's interface. Videos longer than 20 minutes will have transcripts broken into chunks of 30 seconds. Otherwise, they will be broken based on natural breaks and speaker changes. </p>
           </div>
         </div>
         <div className="accordion-item">
